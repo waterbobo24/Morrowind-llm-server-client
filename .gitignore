@@ -8,3 +8,4 @@ obj/
 config.json
 BuildInfo.g.cs
 .tmp/zdo-rpg-ai/
+zdo-rpg-ai/
