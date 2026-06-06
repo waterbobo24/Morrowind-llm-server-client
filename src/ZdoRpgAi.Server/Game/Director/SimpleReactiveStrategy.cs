@@ -3,6 +3,7 @@ using ZdoRpgAi.Protocol.Messages;
 using ZdoRpgAi.Protocol.Rpc;
 using ZdoRpgAi.Server.Game.Npc;
 using ZdoRpgAi.Server.Game.Story;
+using ZdoRpgAi.Server.Bootstrap;
 using ZdoRpgAi.Server.Llm;
 
 namespace ZdoRpgAi.Server.Game.Director;
@@ -15,13 +16,17 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
     private readonly IStory _story;
     private readonly NpcRepository _npcRepo;
     private readonly IRpcChannel _rpc;
+    private readonly PlayerStateTracker _playerState;
+    private readonly PlayerPersonaSection _playerPersonaConfig;
 
-    public SimpleReactiveStrategy(ILlm mainLlm, ILlm simpleLlm, IStory story, NpcRepository npcRepo, IRpcChannel rpc) {
+    public SimpleReactiveStrategy(ILlm mainLlm, ILlm simpleLlm, IStory story, NpcRepository npcRepo, IRpcChannel rpc, PlayerStateTracker playerState, PlayerPersonaSection playerPersonaConfig) {
         _mainLlm = mainLlm;
         _simpleLlm = simpleLlm;
         _story = story;
         _npcRepo = npcRepo;
         _rpc = rpc;
+        _playerState = playerState;
+        _playerPersonaConfig = playerPersonaConfig;
     }
 
     public async Task<List<StoryEvent>> ProcessStoryEventsAsync(List<StoryEvent> events) {
@@ -50,7 +55,7 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
             Log.Trace("NPC info: {Name} ({Race} {Sex})", npcInfo.Name, npcInfo.Race, npcInfo.Sex);
             var (history, summaries) = await _story.GetHistoryForCharacterAsync(npcId);
             Log.Trace("History: {HistoryCount} events, {SummaryCount} summaries", history.Count, summaries.Count);
-            var (responseText, actions) = await GenerateNpcResponseAsync(npcInfo, history, summaries);
+            var (responseText, actions) = await GenerateNpcResponseAsync(npcInfo, history, summaries, playerIds.FirstOrDefault());
             if (responseText == null && (actions == null || actions.Count == 0)) {
                 Log.Warn("LLM returned no response for NPC {NpcId}", npcId);
                 return [];
@@ -285,20 +290,66 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
         ["caius cosades"] = "You are Caius Cosades, the grizzled Imperial spymaster of the Blades in Balmora. You speak bluntly and have little patience for fools.",
     };
 
+    private string? BuildPlayerPersonaBlock(string? playerId) {
+        if (playerId == null) {
+            Log.Info("PlayerPersonaBlock skipped: playerId is null");
+            return null;
+        }
+
+        var state = _playerState.GetPlayerState(playerId);
+        string? resolvedId = playerId;
+
+        if (state == null) {
+            var fallbackId = _playerState.ListPlayerIds().FirstOrDefault();
+            if (fallbackId != null) {
+                Log.Info("PlayerState not found for '{PlayerId}', falling back to '{FallbackId}'", playerId, fallbackId);
+                state = _playerState.GetPlayerState(fallbackId);
+                resolvedId = fallbackId;
+            } else {
+                Log.Info("PlayerState not found for '{PlayerId}' and no fallback players exist", playerId);
+            }
+        } else {
+            Log.Info("PlayerState found for '{PlayerId}': {Race} {Sex} Level {Level}", playerId, state.Race, state.Sex, state.Level);
+        }
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_playerPersonaConfig?.Backstory)) {
+            parts.Add($"BACKSTORY: {_playerPersonaConfig.Backstory}");
+        }
+        if (state != null && (_playerPersonaConfig?.IncludeStats ?? false)) {
+            parts.Add($"STATS: Level {state.Level} {state.Race} {state.Sex}. " +
+                      $"HP {state.HealthCurrent}/{state.HealthMax}, " +
+                      $"Magicka {state.MagickaCurrent}/{state.MagickaMax}, " +
+                      $"Fatigue {state.FatigueCurrent}/{state.FatigueMax}.");
+        }
+        if (state != null && (_playerPersonaConfig?.IncludeLocation ?? false) && !string.IsNullOrWhiteSpace(state.CellName)) {
+            parts.Add($"LOCATION: Currently in {state.CellName}.");
+        }
+
+        if (parts.Count == 0) return null;
+
+        var inner = string.Join(" ", parts);
+        // Make it crystal clear this describes the PLAYER, not the NPC
+        return $"--- INFORMATION ABOUT THE PERSON YOU ARE SPEAKING TO ---\n{inner}";
+    }
+
     private static string GetPersonality(NpcInfo npc) =>
         s_npcPersonalities.GetValueOrDefault(npc.Id)
         ?? $"You are {npc.Name}, a {npc.Race} ({npc.Sex}), living in Morrowind.";
 
     private async Task<(string? Text, List<LlmToolCall> Actions)> GenerateNpcResponseAsync(
         NpcInfo npc,
-        List<StoryEvent> history, List<StoryEventSummary> summaries) {
+        List<StoryEvent> history, List<StoryEventSummary> summaries, string? playerId) {
         Log.Trace("Generating response for NPC {NpcName} with {HistoryCount} history events and {SummaryCount} summaries",
             npc.Name, history.Count, summaries.Count);
 
         var contextBlock = BuildContextBlock(summaries, history);
 
+        var playerPersonaBlock = BuildPlayerPersonaBlock(playerId);
+
         var systemPrompt = $"""
             {GetPersonality(npc)}
+            {playerPersonaBlock ?? ""}
             Stay in character. Speak briefly and naturally. Do not mention that you are an AI. Always respond in the English language.
 
             You will be told what other characters say and do. Reply with your own speech AND use tools to perform game actions when appropriate.
@@ -344,6 +395,7 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
             Tools = GetAvailableTools(),
         };
 
+        Log.Info("FULL SYSTEM PROMPT for {NpcId}:\n{SystemPrompt}", npc.Id, systemPrompt);
         Log.Trace("Calling main LLM with {MessageCount} messages and {ToolCount} tools", messages.Count, request.Tools.Count);
         var response = await _mainLlm.ChatAsync(request);
         var text = response.Text?.Trim();

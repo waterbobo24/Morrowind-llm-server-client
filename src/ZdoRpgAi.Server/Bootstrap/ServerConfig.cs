@@ -16,6 +16,24 @@ public class ServerConfig {
     public required SttSection Stt { get; set; }
     public required LlmSection Llm { get; set; }
     public DirectorSection Director { get; set; } = new();
+    public PlayerPersonaSection PlayerPersona { get; set; } = new();
+}
+
+public class PlayerPersonaSection {
+    /// <summary>
+    /// Static backstory injected into every LLM prompt, e.g. "A mysterious outlander who arrived by boat."
+    /// </summary>
+    public string Backstory { get; set; } = "";
+
+    /// <summary>
+    /// If true, inject current health/magicka/fatigue/level into LLM prompt.
+    /// </summary>
+    public bool IncludeStats { get; set; } = true;
+
+    /// <summary>
+    /// If true, inject current cell name into LLM prompt.
+    /// </summary>
+    public bool IncludeLocation { get; set; } = true;
 }
 
 public class DirectorSection {

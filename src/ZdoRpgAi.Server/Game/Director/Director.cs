@@ -2,6 +2,7 @@ using ZdoRpgAi.Core;
 using ZdoRpgAi.Protocol.Messages;
 using ZdoRpgAi.Protocol.Rpc;
 using ZdoRpgAi.Server.Game.Npc;
+using ZdoRpgAi.Server.Bootstrap;
 using ZdoRpgAi.Server.Game.Story;
 using ZdoRpgAi.Server.Llm;
 using ZdoRpgAi.Server.Util.Mp3;
@@ -22,13 +23,13 @@ public class Director {
     private bool _processing;
     private int _playerInterruptionIteration = 0;
 
-    public Director(Story.Story story, DirectorHelper directorHelper, NpcSpeechGenerator npcSpeechGenerator, IRpcChannel rpc, ILlm mainLlm, ILlm simpleLlm, NpcRepository npcRepo) {
+    public Director(Story.Story story, DirectorHelper directorHelper, NpcSpeechGenerator npcSpeechGenerator, IRpcChannel rpc, ILlm mainLlm, ILlm simpleLlm, NpcRepository npcRepo, PlayerStateTracker playerState, PlayerPersonaSection playerPersonaConfig) {
         _story = story;
         _directorHelper = directorHelper;
         _npcSpeechGenerator = npcSpeechGenerator;
         _rpc = rpc;
         _npcRepo = npcRepo;
-        _simpleReactive = new SimpleReactiveStrategy(mainLlm, simpleLlm, story, npcRepo, rpc);
+        _simpleReactive = new SimpleReactiveStrategy(mainLlm, simpleLlm, story, npcRepo, rpc, playerState, playerPersonaConfig);
         story.EventRegistered += OnStoryEventRegistered;
     }
 

@@ -9,10 +9,10 @@ namespace ZdoRpgAi.Protocol.Messages;
 [JsonSerializable(typeof(SpeechRecognitionInProgressPayload))]
 [JsonSerializable(typeof(SpeechRecognitionCompletePayload))]
 [JsonSerializable(typeof(GetCharactersWhoHearRequestPayload))]
-[JsonSerializable(typeof(GetNpcInfoRequestPayload))]
-[JsonSerializable(typeof(GetNpcInfoResponsePayload))]
 [JsonSerializable(typeof(GetPlayerInfoRequestPayload))]
+[JsonSerializable(typeof(GetNpcInfoRequestPayload))]
 [JsonSerializable(typeof(GetPlayerInfoResponsePayload))]
+[JsonSerializable(typeof(GetNpcInfoResponsePayload))]
 [JsonSerializable(typeof(SpawnOnGroundInFrontOfCharacterPayload))]
 [JsonSerializable(typeof(PlaySound3dOnCharacterPayload))]
 [JsonSerializable(typeof(NpcStartFollowCharacterPayload))]
@@ -22,7 +22,6 @@ namespace ZdoRpgAi.Protocol.Messages;
 [JsonSerializable(typeof(ShowMessageBoxPayload))]
 // Mod → Client
 [JsonSerializable(typeof(StartSessionAckPayload))]
-[JsonSerializable(typeof(RequestTextInputPayload))]
 // Client → Mod
 [JsonSerializable(typeof(SayMp3FilePayload))]
 // Client → Both
@@ -33,9 +32,12 @@ namespace ZdoRpgAi.Protocol.Messages;
 [JsonSerializable(typeof(PlayerSpeaksAudioPayload))]
 // Mod → Server
 [JsonSerializable(typeof(PlayerAddedPayload))]
+[JsonSerializable(typeof(PlayerStateChangedPayload))]
 [JsonSerializable(typeof(TargetChangedPayload))]
 [JsonSerializable(typeof(CellChangePayload))]
 [JsonSerializable(typeof(GameSaveLoadPayload))]
 [JsonSerializable(typeof(NearbyCharacterInfo))]
 [JsonSerializable(typeof(GetCharactersWhoHearResponsePayload))]
+// Mod → Server (request text input)
+[JsonSerializable(typeof(RequestTextInputPayload))]
 public partial class PayloadJsonContext : JsonSerializerContext;

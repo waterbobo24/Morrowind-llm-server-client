@@ -30,7 +30,8 @@ public class GameRunner {
         IMainRepository mainRepo, ISaveGameRepository saveGameRepo,
         IRpcChannel rpc,
         ITextToSpeech tts, ISpeechToText stt, ILlm mainLlm, ILlm simpleLlm, LuaSandbox lua,
-        DirectorSection directorConfig, Mp3SpeedConfig mp3SpeedConfig) {
+        DirectorSection directorConfig, Mp3SpeedConfig mp3SpeedConfig,
+        PlayerPersonaSection playerPersonaConfig) {
         _mainRepo = mainRepo;
         _saveGameRepo = saveGameRepo;
         _tts = tts;
@@ -45,7 +46,8 @@ public class GameRunner {
         _npcRepo = new NpcRepository(mainRepo, saveGameRepo, rpc);
         var speedAdjuster = new Mp3SpeedAdjuster(mp3SpeedConfig);
         var npcSpeechGenerator = new NpcSpeechGenerator(tts, speedAdjuster);
-        _director = new Director.Director(story, directorHelper, npcSpeechGenerator, rpc, mainLlm, simpleLlm, _npcRepo);
+        var playerState = new PlayerStateTracker(rpc);
+        _director = new Director.Director(story, directorHelper, npcSpeechGenerator, rpc, mainLlm, simpleLlm, _npcRepo, playerState, playerPersonaConfig);
 
         _playerHandler.PlayerSpoke += _storyComposer.OnPlayerSpeak;
     }

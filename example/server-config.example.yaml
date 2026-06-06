@@ -46,6 +46,12 @@ stt:
   #   language: en
   #   model: nova-2
 
+# Player persona (injected into NPC prompts)
+playerPersona:
+  backstory: ""
+  includeStats: true
+  includeLocation: true
+
 # Director
 director:
   compactThreshold: 30
