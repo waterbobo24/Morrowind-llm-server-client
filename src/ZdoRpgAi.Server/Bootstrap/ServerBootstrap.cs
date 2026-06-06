@@ -13,6 +13,7 @@ using ZdoRpgAi.Server.SpeechToText.Dummy;
 using ZdoRpgAi.Server.TextToSpeech;
 using ZdoRpgAi.Server.TextToSpeech.Dummy;
 using ZdoRpgAi.Server.TextToSpeech.ElevenLabs;
+using ZdoRpgAi.Server.TextToSpeech.Pocket;
 
 namespace ZdoRpgAi.Server.Bootstrap;
 
@@ -47,6 +48,8 @@ public static class ServerBootstrap {
             "dummy" => new DummyTextToSpeech(),
             "elevenlabs" => new ElevenLabsTextToSpeech(config.ElevenLabs
                 ?? throw new InvalidOperationException("tts.elevenLabs config is required when provider is 'elevenlabs'")),
+            "pocket" => new PocketTtsTextToSpeech(config.Pocket
+                ?? throw new InvalidOperationException("tts.pocket config is required when provider is 'pocket'")),
             _ => throw new InvalidOperationException($"Unknown TTS provider: {config.Provider}"),
         };
     }

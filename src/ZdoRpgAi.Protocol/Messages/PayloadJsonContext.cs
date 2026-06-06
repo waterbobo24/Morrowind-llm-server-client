@@ -22,6 +22,7 @@ namespace ZdoRpgAi.Protocol.Messages;
 [JsonSerializable(typeof(ShowMessageBoxPayload))]
 // Mod → Client
 [JsonSerializable(typeof(StartSessionAckPayload))]
+[JsonSerializable(typeof(RequestTextInputPayload))]
 // Client → Mod
 [JsonSerializable(typeof(SayMp3FilePayload))]
 // Client → Both

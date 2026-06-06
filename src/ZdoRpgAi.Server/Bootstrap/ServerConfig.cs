@@ -3,6 +3,7 @@ using ZdoRpgAi.Server.Llm.Gemini;
 using ZdoRpgAi.Server.Llm.OpenAi;
 using ZdoRpgAi.Server.SpeechToText.Deepgram;
 using ZdoRpgAi.Server.TextToSpeech.ElevenLabs;
+using ZdoRpgAi.Server.TextToSpeech.Pocket;
 using ZdoRpgAi.Server.Util.Mp3;
 
 namespace ZdoRpgAi.Server.Bootstrap;
@@ -38,6 +39,7 @@ public class HttpServerSection {
 public class TtsSection {
     public required string Provider { get; set; }
     public ElevenLabsConfig? ElevenLabs { get; set; }
+    public PocketTtsConfig? Pocket { get; set; }
     public Mp3SpeedConfig Mp3Speed { get; set; } = new();
 }
 

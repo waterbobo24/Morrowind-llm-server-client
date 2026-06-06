@@ -8,6 +8,7 @@ public enum ModToServerMessageType {
     CellChange,
     GameSaveLoad,
     GetCharactersWhoHearResponse,
+    RequestTextInput,
 }
 
 public record PlayerAddedPayload(string PlayerId);
@@ -16,3 +17,4 @@ public record CellChangePayload(string PlayerId, string CellName);
 public record GameSaveLoadPayload();
 public record NearbyCharacterInfo(string CharacterId, float DistanceMeters);
 public record GetCharactersWhoHearResponsePayload(NearbyCharacterInfo[] Characters);
+public record RequestTextInputPayload(string PlayerId, string? NpcId);

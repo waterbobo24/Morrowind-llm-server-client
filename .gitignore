@@ -7,4 +7,4 @@ obj/
 .DS_Store
 config.json
 BuildInfo.g.cs
-.tmp/
+.tmp/zdo-rpg-ai/

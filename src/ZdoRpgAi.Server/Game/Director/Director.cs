@@ -124,19 +124,22 @@ public class Director {
             var npc = await _npcRepo.GetNpcInfoAsync(npcSpeakEvent.NpcCharacterId);
             if (npc != null) {
                 var iterationBeforeGeneration = _playerInterruptionIteration;
-                Log.Trace("Generating speech for NPC {NpcId}", npcSpeakEvent.NpcCharacterId);
+                Log.Info("Generating speech for NPC {NpcId}", npcSpeakEvent.NpcCharacterId);
                 var mp3 = await _npcSpeechGenerator.GenerateAsync(npc, npcSpeakEvent.Text);
-                if (_playerInterruptionIteration == iterationBeforeGeneration && mp3 != null) {
-                    Log.Trace("Publishing MP3 for NPC {NpcId}", npcSpeakEvent.NpcCharacterId);
+                if (mp3 == null) {
+                    Log.Warn("TTS returned null for NPC {NpcId}", npcSpeakEvent.NpcCharacterId);
+                }
+                else if (_playerInterruptionIteration == iterationBeforeGeneration) {
+                    Log.Info("Publishing MP3 for NPC {NpcId} ({Bytes} bytes)", npcSpeakEvent.NpcCharacterId, mp3.Mp3Bytes.Length);
                     _directorHelper.PublishNpcSpeaksMp3(npcSpeakEvent.NpcCharacterId, npcSpeakEvent.Text, mp3);
 
                     var durationMs = (int)((Mp3Duration.Estimate(mp3.Mp3Bytes) ?? 0) * 1000);
                     if (durationMs > 0) {
-                        Log.Trace("Waiting {DurationMs}ms for speech playback", durationMs);
+                        Log.Info("Waiting {DurationMs}ms for speech playback", durationMs);
                         await WaitUnlessInterruptedAsync(durationMs, iterationBeforeGeneration);
                     }
                 }
-                else if (_playerInterruptionIteration != iterationBeforeGeneration) {
+                else {
                     Log.Trace("Speech generation interrupted by player for NPC {NpcId}", npcSpeakEvent.NpcCharacterId);
                 }
             }

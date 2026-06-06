@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using ZdoRpgAi.Core;
 using ZdoRpgAi.Protocol.Channel;
 using ZdoRpgAi.Protocol.Messages;
@@ -40,7 +41,8 @@ public class ClientApplication : IDisposable {
 
     public async Task RunAsync(CancellationToken ct) {
         var tasks = new List<Task> {
-            _bridge.RunAsync(ct)
+            _bridge.RunAsync(ct),
+            Task.Run(() => RunConsoleTextInputLoop(ct), ct)
         };
 
         if (_voiceCapture != null) {
@@ -48,6 +50,36 @@ public class ClientApplication : IDisposable {
         }
 
         await Task.WhenAll(tasks);
+    }
+
+    private async Task RunConsoleTextInputLoop(CancellationToken ct) {
+        Log.Info("Text input mode active. Type dialogue and press Enter to speak to targeted NPC.");
+        while (!ct.IsCancellationRequested) {
+            try {
+                var line = await Console.In.ReadLineAsync().WaitAsync(ct);
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                if (_lastTargetNpcId == null) {
+                    Log.Warn("No NPC targeted. Look at an NPC before typing dialogue.");
+                    continue;
+                }
+
+                var payload = new PlayerSpeaksTextPayload(
+                    _localPlayerId ?? "player",
+                    line.Trim(),
+                    _lastTargetNpcId,
+                    DateTime.UtcNow.ToString("O"));
+                var data = JsonExtensions.SerializeToObject(payload, PayloadJsonContext.Default.PlayerSpeaksTextPayload);
+                _bridge.SendMessageToServer(new Message(nameof(ClientToServerMessageType.PlayerSpeaksText), 0, null, data, null));
+                Log.Info("Sent text to NPC {NpcId}: {Text}", _lastTargetNpcId, line.Trim());
+            }
+            catch (OperationCanceledException) {
+                break;
+            }
+            catch (Exception ex) {
+                Log.Error("Text input error: {Error}", ex.Message);
+            }
+        }
     }
 
     private void HandleServerMessage(Message msg) {
@@ -83,6 +115,7 @@ public class ClientApplication : IDisposable {
 
     private async Task HandleNpcSpeaksMp3Async(Message msg) {
         if (msg.Binary == null || msg.Json == null) {
+            Log.Warn("Dropping NpcSpeaksMp3: Binary={HasBinary}, Json={HasJson}", msg.Binary != null, msg.Json != null);
             return;
         }
 
@@ -133,6 +166,14 @@ public class ClientApplication : IDisposable {
 
                     break;
                 }
+
+            case nameof(ModToServerMessageType.RequestTextInput): {
+                    var req = msg.Json?.DeserializeSafe(PayloadJsonContext.Default.RequestTextInputPayload);
+                    if (req != null) {
+                        _ = LaunchZenityTextInputAsync(req.PlayerId, req.NpcId);
+                    }
+                    break;
+                }
         }
 
         _bridge.SendMessageToServer(msg);
@@ -173,4 +214,52 @@ public class ClientApplication : IDisposable {
         _voiceCapture?.Dispose();
         _bridge.Dispose();
     }
+
+    private async Task LaunchZenityTextInputAsync(string playerId, string? npcId) {
+        if (string.IsNullOrEmpty(npcId)) {
+            Log.Warn("No NPC targeted. Look at an NPC before pressing Y.");
+            return;
+        }
+
+        var psi = new ProcessStartInfo {
+            FileName = "zenity",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        psi.ArgumentList.Add("--entry");
+        psi.ArgumentList.Add("--title=Talk to NPC");
+        psi.ArgumentList.Add("--text=What do you say?");
+        psi.ArgumentList.Add("--width=400");
+
+        try {
+            using var process = Process.Start(psi);
+            if (process == null) {
+                Log.Error("Failed to start zenity");
+                return;
+            }
+
+            await process.WaitForExitAsync();
+            if (process.ExitCode != 0) {
+                Log.Debug("Zenity cancelled");
+                return;
+            }
+
+            var text = process.StandardOutput.ReadToEnd().Trim();
+            if (string.IsNullOrWhiteSpace(text)) return;
+
+            var payload = new PlayerSpeaksTextPayload(
+                playerId,
+                text,
+                npcId,
+                DateTime.UtcNow.ToString("O"));
+            var data = JsonExtensions.SerializeToObject(payload, PayloadJsonContext.Default.PlayerSpeaksTextPayload);
+            _bridge.SendMessageToServer(new Message(nameof(ClientToServerMessageType.PlayerSpeaksText), 0, null, data, null));
+            Log.Info("Sent text to NPC {NpcId}: {Text}", npcId, text);
+        }
+        catch (Exception ex) {
+            Log.Error("Zenity error: {Error}", ex.Message);
+        }
+    }
+
 }

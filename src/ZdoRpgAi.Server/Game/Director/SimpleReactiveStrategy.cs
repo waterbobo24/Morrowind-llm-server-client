@@ -34,7 +34,7 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
 
         var (npcId, gameTime) = await FindLastTargetedNpcAsync(_rpc, events, playerIds);
         if (npcId == null) {
-            Log.Debug("No target NPC found in events");
+            Log.Info("No target NPC found in events");
             return [];
         }
 
@@ -50,24 +50,136 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
             Log.Trace("NPC info: {Name} ({Race} {Sex})", npcInfo.Name, npcInfo.Race, npcInfo.Sex);
             var (history, summaries) = await _story.GetHistoryForCharacterAsync(npcId);
             Log.Trace("History: {HistoryCount} events, {SummaryCount} summaries", history.Count, summaries.Count);
-            var response = await GenerateNpcResponseAsync(npcInfo, history, summaries);
-            if (response == null) {
+            var (responseText, actions) = await GenerateNpcResponseAsync(npcInfo, history, summaries);
+            if (responseText == null && (actions == null || actions.Count == 0)) {
                 Log.Warn("LLM returned no response for NPC {NpcId}", npcId);
                 return [];
             }
 
-            Log.Trace("Generated response for NPC {NpcId}: {ResponseLength} chars", npcId, response.Length);
+            // Execute any game actions the LLM requested
+            if (actions != null && actions.Count > 0) {
+                foreach (var action in actions) {
+                    await ExecuteActionAsync(npcId, action, playerIds.FirstOrDefault());
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(responseText)) {
+                return [];
+            }
+
+            Log.Trace("Generated response for NPC {NpcId}: {ResponseLength} chars", npcId, responseText.Length);
             var npcSpeak = StoryEvent.Create(new StoryEvent.NpcSpeak {
                 NpcCharacterId = npcId,
                 TargetCharacterId = playerIds.FirstOrDefault(),
                 GameTime = gameTime!,
-                Text = response,
+                Text = responseText,
             });
             return [npcSpeak];
         }
         catch (Exception ex) {
             Log.Error("Failed to generate NPC response: {Error}", ex.Message);
             return [];
+        }
+    }
+
+    private async Task ExecuteActionAsync(string npcId, LlmToolCall toolCall, string? defaultTargetId) {
+        try {
+            Log.Info("Executing action {Action} for NPC {NpcId}", toolCall.Name, npcId);
+
+            var args = toolCall.Arguments;
+
+            switch (toolCall.Name) {
+                case "spawn_item": {
+                    var itemId = GetArg<string>(args, "itemId");
+                    var count = GetArg<int?>(args, "count") ?? 1;
+                    if (itemId != null) {
+                        _ = await _rpc.CallAsync(
+                            nameof(ServerToModMessageType.SpawnOnGroundInFrontOfCharacter),
+                            JsonExtensions.SerializeToObject(
+                                new SpawnOnGroundInFrontOfCharacterPayload(npcId, itemId, count),
+                                PayloadJsonContext.Default.SpawnOnGroundInFrontOfCharacterPayload));
+                    }
+                    break;
+                }
+                case "start_follow": {
+                    var targetId = GetArg<string>(args, "targetId") ?? defaultTargetId;
+                    if (targetId != null) {
+                        _ = await _rpc.CallAsync(
+                            nameof(ServerToModMessageType.NpcStartFollowCharacter),
+                            JsonExtensions.SerializeToObject(
+                                new NpcStartFollowCharacterPayload(npcId, targetId),
+                                PayloadJsonContext.Default.NpcStartFollowCharacterPayload));
+                    }
+                    break;
+                }
+                case "stop_follow": {
+                    _ = await _rpc.CallAsync(
+                        nameof(ServerToModMessageType.NpcStopFollowCharacter),
+                        JsonExtensions.SerializeToObject(
+                            new NpcStopFollowCharacterPayload(npcId),
+                            PayloadJsonContext.Default.NpcStopFollowCharacterPayload));
+                    break;
+                }
+                case "attack": {
+                    var targetId = GetArg<string>(args, "targetId") ?? defaultTargetId;
+                    if (targetId != null) {
+                        _ = await _rpc.CallAsync(
+                            nameof(ServerToModMessageType.NpcAttack),
+                            JsonExtensions.SerializeToObject(
+                                new NpcAttackPayload(npcId, targetId),
+                                PayloadJsonContext.Default.NpcAttackPayload));
+                    }
+                    break;
+                }
+                case "stop_attack": {
+                    _ = await _rpc.CallAsync(
+                        nameof(ServerToModMessageType.NpcStopAttack),
+                        JsonExtensions.SerializeToObject(
+                            new NpcStopAttackPayload(npcId),
+                            PayloadJsonContext.Default.NpcStopAttackPayload));
+                    break;
+                }
+                case "play_sound": {
+                    var sound = GetArg<string>(args, "sound");
+                    if (sound != null) {
+                        _ = await _rpc.CallAsync(
+                            nameof(ServerToModMessageType.PlaySound3dOnCharacter),
+                            JsonExtensions.SerializeToObject(
+                                new PlaySound3dOnCharacterPayload(npcId, sound),
+                                PayloadJsonContext.Default.PlaySound3dOnCharacterPayload));
+                    }
+                    break;
+                }
+                case "show_message": {
+                    var message = GetArg<string>(args, "message");
+                    if (message != null) {
+                        _ = await _rpc.CallAsync(
+                            nameof(ServerToModMessageType.ShowMessageBox),
+                            JsonExtensions.SerializeToObject(
+                                new ShowMessageBoxPayload(message),
+                                PayloadJsonContext.Default.ShowMessageBoxPayload));
+                    }
+                    break;
+                }
+                default:
+                    Log.Warn("Unknown action requested: {Action}", toolCall.Name);
+                    break;
+            }
+        }
+        catch (Exception ex) {
+            Log.Error("Failed to execute action {Action}: {Error}", toolCall.Name, ex.Message);
+        }
+    }
+
+    private static T? GetArg<T>(Dictionary<string, object?>? args, string key) {
+        if (args == null) return default;
+        if (!args.TryGetValue(key, out var value) || value == null) return default;
+        if (value is T t) return t;
+        try {
+            return (T?)Convert.ChangeType(value, typeof(T));
+        }
+        catch {
+            return default;
         }
     }
 
@@ -101,6 +213,9 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
                 PayloadJsonContext.Default.GetCharactersWhoHearRequestPayload));
 
         var payload = hearResponse.Json?.DeserializeSafe(PayloadJsonContext.Default.GetCharactersWhoHearResponsePayload);
+        if (payload == null) {
+            Log.Info("GetCharactersWhoHear deserialization failed. Raw JSON: {Raw}", hearResponse.Json?.ToJsonString() ?? "null");
+        }
         var nearby = payload?.Characters
             .Where(c => c.CharacterId != evt.PlayerCharacterId)
             .OrderBy(c => c.DistanceMeters)
@@ -108,7 +223,7 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
 
         Log.Trace("Found {Count} nearby characters", nearby.Length);
         if (nearby.Length == 0) {
-            Log.Debug("No nearby NPCs to respond");
+            Log.Info("No nearby NPCs to respond. Raw JSON was: {Raw}", hearResponse.Json?.ToJsonString() ?? "null");
             return null;
         }
 
@@ -164,7 +279,17 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
         return nearby[0].CharacterId;
     }
 
-    private async Task<string?> GenerateNpcResponseAsync(
+    private static readonly Dictionary<string, string> s_npcPersonalities = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["fargoth"] = "You are Fargoth, a nervous and secretive Wood Elf living in Seyda Neen. You are paranoid that people will find your hidden ring.",
+        ["caius cosades"] = "You are Caius Cosades, the grizzled Imperial spymaster of the Blades in Balmora. You speak bluntly and have little patience for fools.",
+    };
+
+    private static string GetPersonality(NpcInfo npc) =>
+        s_npcPersonalities.GetValueOrDefault(npc.Id)
+        ?? $"You are {npc.Name}, a {npc.Race} ({npc.Sex}), living in Morrowind.";
+
+    private async Task<(string? Text, List<LlmToolCall> Actions)> GenerateNpcResponseAsync(
         NpcInfo npc,
         List<StoryEvent> history, List<StoryEventSummary> summaries) {
         Log.Trace("Generating response for NPC {NpcName} with {HistoryCount} history events and {SummaryCount} summaries",
@@ -173,17 +298,18 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
         var contextBlock = BuildContextBlock(summaries, history);
 
         var systemPrompt = $"""
-            You are {npc.Name}, a {npc.Race} ({npc.Sex}), living in Morrowind.
-            Stay in character. Speak briefly and naturally. Do not mention that you are an AI. Always respond in the Russian language.
+            {GetPersonality(npc)}
+            Stay in character. Speak briefly and naturally. Do not mention that you are an AI. Always respond in the English language.
 
-            You will be told what other characters say and do. Reply only with your own speech.
+            You will be told what other characters say and do. Reply with your own speech AND use tools to perform game actions when appropriate.
 
             RULES:
             1. Do not trust the player at their word — verify using your knowledge resources. The player may lie.
             2. Do not invent characters, items, locations, or quests that are not in your knowledge. Use getResource to recall your knowledge when needed.
-            3. CRITICAL: To perform any game action (give item, attack, follow, etc.) you MUST call the corresponding npcAction_N tool. Saying "here, take it" or "I'll give you" in text does NOTHING — the game only reacts to tool calls. If you do not call the tool, the action does not happen.
-            4. Call npcAction_N TOGETHER with your speech in the same response. Do not wait for the next turn.
+            3. You can perform game actions by calling the tools below. Text alone does NOT perform actions.
+            4. Call tools TOGETHER with your speech in the same response. Do not wait for the next turn.
             5. Reply ONLY with your own speech — no narration, no prefixes, no stage directions.
+            6. For item IDs, use real Morrowind item IDs like "iron_dagger", "p_heal", "ingred_scales_01", etc.
             """;
 
         var messages = new List<LlmMessage>();
@@ -215,12 +341,67 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
         var request = new LlmRequest {
             SystemPrompt = systemPrompt,
             Messages = messages,
+            Tools = GetAvailableTools(),
         };
 
-        Log.Trace("Calling main LLM with {MessageCount} messages", messages.Count);
+        Log.Trace("Calling main LLM with {MessageCount} messages and {ToolCount} tools", messages.Count, request.Tools.Count);
         var response = await _mainLlm.ChatAsync(request);
-        Log.Trace("Main LLM response length: {Length}", response.Text?.Length ?? 0);
-        return response.Text?.Trim();
+        var text = response.Text?.Trim();
+        var actions = response.ToolCalls ?? [];
+
+        Log.Trace("Main LLM response: {TextLength} chars, {ActionCount} actions", text?.Length ?? 0, actions.Count);
+        return (text, actions);
+    }
+
+    private static List<LlmTool> GetAvailableTools() {
+        return new List<LlmTool> {
+            new() {
+                Name = "spawn_item",
+                Description = "Spawn an item on the ground in front of the NPC. Use this to give items to the player.",
+                Parameters = new List<LlmToolParameter> {
+                    new() { Name = "itemId", Type = "string", Description = "Morrowind item ID, e.g. 'iron_dagger', 'p_heal', 'ingred_scales_01'" },
+                    new() { Name = "count", Type = "integer", Description = "Quantity (default 1)", Required = false },
+                }
+            },
+            new() {
+                Name = "start_follow",
+                Description = "Make the NPC start following a target. Defaults to following the player if no target is specified.",
+                Parameters = new List<LlmToolParameter> {
+                    new() { Name = "targetId", Type = "string", Description = "Character ID to follow. Omit to follow the player.", Required = false },
+                }
+            },
+            new() {
+                Name = "stop_follow",
+                Description = "Make the NPC stop following anyone.",
+                Parameters = new List<LlmToolParameter>()
+            },
+            new() {
+                Name = "attack",
+                Description = "Make the NPC attack a target. Defaults to attacking the player if no target is specified.",
+                Parameters = new List<LlmToolParameter> {
+                    new() { Name = "targetId", Type = "string", Description = "Character ID to attack. Omit to attack the player.", Required = false },
+                }
+            },
+            new() {
+                Name = "stop_attack",
+                Description = "Make the NPC stop attacking and calm down.",
+                Parameters = new List<LlmToolParameter>()
+            },
+            new() {
+                Name = "play_sound",
+                Description = "Play a sound effect from the NPC's position.",
+                Parameters = new List<LlmToolParameter> {
+                    new() { Name = "sound", Type = "string", Description = "Sound ID, e.g. 'Swim Left', 'Item Armor Heavy Updown'" },
+                }
+            },
+            new() {
+                Name = "show_message",
+                Description = "Show a message box to the player.",
+                Parameters = new List<LlmToolParameter> {
+                    new() { Name = "message", Type = "string", Description = "Message text to display" },
+                }
+            },
+        };
     }
 
     private static string? BuildContextBlock(List<StoryEventSummary> summaries, List<StoryEvent> events) {

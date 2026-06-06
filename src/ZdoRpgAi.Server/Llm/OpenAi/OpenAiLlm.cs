@@ -19,6 +19,10 @@ public class OpenAiLlm : ILlm {
         _model = config.Model;
         _baseUrl = config.BaseUrl.TrimEnd('/');
         _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {config.ApiKey}");
+        if (_baseUrl.Contains("openrouter.ai")) {
+            _http.DefaultRequestHeaders.TryAddWithoutValidation("HTTP-Referer", "https://github.com/zdo-rpg-ai");
+            _http.DefaultRequestHeaders.TryAddWithoutValidation("X-Title", "ZdoRPG AI");
+        }
     }
 
     public async Task<LlmResponse> ChatAsync(LlmRequest request) {
@@ -206,7 +210,7 @@ public class OpenAiLlm : ILlm {
                     var argsNode = JsonNode.Parse(argsStr);
                     if (argsNode != null) {
                         foreach (var kv in argsNode.AsObject()) {
-                            args[kv.Key] = kv.Value?.GetValue<string>();
+                            args[kv.Key] = kv.Value?.ToString();
                         }
                     }
                 }
