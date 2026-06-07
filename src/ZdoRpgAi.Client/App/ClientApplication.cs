@@ -17,6 +17,7 @@ public class ClientApplication : IDisposable {
     // Tracked state from mod
     private volatile string? _localPlayerId;
     private volatile string? _lastTargetNpcId;
+    private string? _lastGameTime;
 
     public ClientApplication(
         ClientChannelBridge bridge,
@@ -42,7 +43,7 @@ public class ClientApplication : IDisposable {
     public async Task RunAsync(CancellationToken ct) {
         var tasks = new List<Task> {
             _bridge.RunAsync(ct),
-            Task.Run(() => RunConsoleTextInputLoop(ct), ct)
+            !Console.IsInputRedirected ? Task.Run(() => RunConsoleTextInputLoop(ct), ct) : Task.CompletedTask
         };
 
         if (_voiceCapture != null) {
@@ -68,7 +69,7 @@ public class ClientApplication : IDisposable {
                     _localPlayerId ?? "player",
                     line.Trim(),
                     _lastTargetNpcId,
-                    DateTime.UtcNow.ToString("O"));
+                    _lastGameTime ?? DateTime.UtcNow.ToString("O"));
                 var data = JsonExtensions.SerializeToObject(payload, PayloadJsonContext.Default.PlayerSpeaksTextPayload);
                 _bridge.SendMessageToServer(new Message(nameof(ClientToServerMessageType.PlayerSpeaksText), 0, null, data, null));
                 Log.Info("Sent text to NPC {NpcId}: {Text}", _lastTargetNpcId, line.Trim());
@@ -78,6 +79,8 @@ public class ClientApplication : IDisposable {
             }
             catch (Exception ex) {
                 Log.Error("Text input error: {Error}", ex.Message);
+                await Task.Delay(500, ct);
+                await Task.Delay(500, ct);
             }
         }
     }
@@ -166,6 +169,15 @@ public class ClientApplication : IDisposable {
 
                     break;
                 }
+            case nameof(ModToServerMessageType.GameTimeUpdate): {
+                    var e = msg.Json?.DeserializeSafe(PayloadJsonContext.Default.GameTimeUpdatePayload);
+                    if (e != null) {
+                        _lastGameTime = e.GameTime;
+                        Log.Debug("Game time: {GameTime}", _lastGameTime);
+                    }
+
+                    break;
+                }
 
             case nameof(ModToServerMessageType.RequestTextInput): {
                     var req = msg.Json?.DeserializeSafe(PayloadJsonContext.Default.RequestTextInputPayload);
@@ -183,7 +195,7 @@ public class ClientApplication : IDisposable {
         var payload = new PlayerStartSpeakPayload(
             _localPlayerId ?? "player",
             _lastTargetNpcId,
-            "0"
+            _lastGameTime ?? "0"
         );
         var data = JsonExtensions.SerializeToObject(payload, PayloadJsonContext.Default.PlayerStartSpeakPayload);
         _bridge.SendMessageToServer(new Message(nameof(ClientToBothMessageType.PlayerStartSpeak), 0, null, data, null));
@@ -252,7 +264,7 @@ public class ClientApplication : IDisposable {
                 playerId,
                 text,
                 npcId,
-                DateTime.UtcNow.ToString("O"));
+                _lastGameTime ?? DateTime.UtcNow.ToString("O"));
             var data = JsonExtensions.SerializeToObject(payload, PayloadJsonContext.Default.PlayerSpeaksTextPayload);
             _bridge.SendMessageToServer(new Message(nameof(ClientToServerMessageType.PlayerSpeaksText), 0, null, data, null));
             Log.Info("Sent text to NPC {NpcId}: {Text}", npcId, text);

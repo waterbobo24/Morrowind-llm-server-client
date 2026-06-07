@@ -56,4 +56,4 @@ public record GetPlayerInfoResponsePayload(
     int FatigueMax = 0,
     bool IsDead = false);
 public record GetNpcInfoRequestPayload(string NpcId);
-public record GetNpcInfoResponsePayload(string NpcId, string Name, string Race, string Sex, string? Class = null);
+public record GetNpcInfoResponsePayload(string NpcId, string Name, string Race, string Sex, string? Class = null, string? ClassName = null, string? Faction = null, string? FactionRank = null, int? Level = null);

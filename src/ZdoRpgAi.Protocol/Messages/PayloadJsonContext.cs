@@ -40,4 +40,5 @@ namespace ZdoRpgAi.Protocol.Messages;
 [JsonSerializable(typeof(GetCharactersWhoHearResponsePayload))]
 // Mod → Server (request text input)
 [JsonSerializable(typeof(RequestTextInputPayload))]
+[JsonSerializable(typeof(GameTimeUpdatePayload))]
 public partial class PayloadJsonContext : JsonSerializerContext;

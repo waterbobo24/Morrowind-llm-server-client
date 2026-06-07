@@ -317,7 +317,8 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
             parts.Add($"BACKSTORY: {_playerPersonaConfig.Backstory}");
         }
         if (state != null && (_playerPersonaConfig?.IncludeStats ?? false)) {
-            parts.Add($"STATS: Level {state.Level} {state.Race} {state.Sex}. " +
+            var deadMarker = state.IsDead ? " (DEAD)" : "";
+            parts.Add($"NAME: {state.Name} | CLASS: {state.ClassName}{deadMarker} | STATS: Level {state.Level} {state.Race} {state.Sex}. " +
                       $"HP {state.HealthCurrent}/{state.HealthMax}, " +
                       $"Magicka {state.MagickaCurrent}/{state.MagickaMax}, " +
                       $"Fatigue {state.FatigueCurrent}/{state.FatigueMax}.");
@@ -333,9 +334,16 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
         return $"--- INFORMATION ABOUT THE PERSON YOU ARE SPEAKING TO ---\n{inner}";
     }
 
-    private static string GetPersonality(NpcInfo npc) =>
-        s_npcPersonalities.GetValueOrDefault(npc.Id)
-        ?? $"You are {npc.Name}, a {npc.Race} ({npc.Sex}), living in Morrowind.";
+    private static string GetPersonality(NpcInfo npc) {
+        var custom = s_npcPersonalities.GetValueOrDefault(npc.Id);
+        if (custom != null) return custom;
+        var levelPart = npc.Level.HasValue ? $", Level {npc.Level}" : "";
+        var classPart = !string.IsNullOrWhiteSpace(npc.ClassName) ? $" {npc.ClassName}" : "";
+        var factionPart = !string.IsNullOrWhiteSpace(npc.Faction)
+            ? (!string.IsNullOrWhiteSpace(npc.FactionRank) ? $", {npc.FactionRank} of the {npc.Faction}" : $" of the {npc.Faction}")
+            : "";
+        return $"You are {npc.Name}, a {npc.Race}{levelPart}{classPart} ({npc.Sex}){factionPart}, living in Morrowind.";
+    }
 
     private async Task<(string? Text, List<LlmToolCall> Actions)> GenerateNpcResponseAsync(
         NpcInfo npc,
@@ -347,8 +355,10 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
 
         var playerPersonaBlock = BuildPlayerPersonaBlock(playerId);
 
+        var currentGameTime = history.LastOrDefault()?.GameTime;
+        var timeClause = !string.IsNullOrWhiteSpace(currentGameTime) ? $" The current game time is {currentGameTime}." : "";
         var systemPrompt = $"""
-            {GetPersonality(npc)}
+            {GetPersonality(npc)}{timeClause}
             {playerPersonaBlock ?? ""}
             Stay in character. Speak briefly and naturally. Do not mention that you are an AI. Always respond in the English language.
 
@@ -377,8 +387,8 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
         }
 
         var lastMessage = history.LastOrDefault() switch {
-            StoryEvent.PlayerSpeak ps => $"{ps.PlayerCharacterId} says: {ps.Text}",
-            StoryEvent.NpcSpeak ns => $"{ns.NpcCharacterId} says: {ns.Text}",
+            StoryEvent.PlayerSpeak ps => $"[{ps.GameTime}] {ps.PlayerCharacterId} says: {ps.Text}",
+            StoryEvent.NpcSpeak ns => $"[{ns.GameTime}] {ns.NpcCharacterId} says: {ns.Text}",
             _ => null,
         };
 
@@ -472,8 +482,8 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
             parts.Add("RECENT EVENTS:");
             foreach (var evt in contextEvents) {
                 parts.Add(evt switch {
-                    StoryEvent.PlayerSpeak ps => $"{ps.PlayerCharacterId} says: {ps.Text}",
-                    StoryEvent.NpcSpeak ns => $"{ns.NpcCharacterId} says: {ns.Text}",
+                    StoryEvent.PlayerSpeak ps => $"[{ps.GameTime}] {ps.PlayerCharacterId} says: {ps.Text}",
+                    StoryEvent.NpcSpeak ns => $"[{ns.GameTime}] {ns.NpcCharacterId} says: {ns.Text}",
                     _ => evt.ToString()!,
                 });
             }
