@@ -18,6 +18,7 @@ public enum ServerToModMessageType {
     GetPlayerInfo,
     GetNpcInfo,
     RequestTextInput,
+    TransferItem,
 }
 
 public enum ServerToClientMessageType {
@@ -40,6 +41,8 @@ public record ShowMessageBoxPayload(string Message);
 public record GetCharactersWhoHearRequestPayload(string CharacterId, float MaxDistanceMeters = 100f);
 public record SpeechRecognitionInProgressPayload(string PlayerId, string Text);
 public record SpeechRecognitionCompletePayload(string PlayerId, string Text);
+public record TransferItemPayload(string FromCharacterId, string ToCharacterId, string ItemId, int Count = 1, bool IsServicePayment = false);
+
 public record GetPlayerInfoRequestPayload(string PlayerId);
 public record GetPlayerInfoResponsePayload(
     string ObjectId,

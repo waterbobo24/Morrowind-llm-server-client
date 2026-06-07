@@ -155,6 +155,21 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
                     }
                     break;
                 }
+                case "transfer_item": {
+                    var itemId = GetArg<string>(args, "itemId");
+                    var count = GetArg<int?>(args, "count") ?? 1;
+                    var fromId = GetArg<string>(args, "fromCharacterId") ?? npcId;
+                    var toId = GetArg<string>(args, "toCharacterId") ?? defaultTargetId;
+                    var isService = GetArg<bool?>(args, "isServicePayment") ?? false;
+                    if (itemId != null && fromId != null && toId != null) {
+                        _ = await _rpc.CallAsync(
+                            nameof(ServerToModMessageType.TransferItem),
+                            JsonExtensions.SerializeToObject(
+                                new TransferItemPayload(fromId, toId, itemId, count, isService),
+                                PayloadJsonContext.Default.TransferItemPayload));
+                    }
+                    break;
+                }
                 case "show_message": {
                     var message = GetArg<string>(args, "message");
                     if (message != null) {
@@ -454,6 +469,17 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
                 Description = "Play a sound effect from the NPC's position.",
                 Parameters = new List<LlmToolParameter> {
                     new() { Name = "sound", Type = "string", Description = "Sound ID, e.g. 'Swim Left', 'Item Armor Heavy Updown'" },
+                }
+            },
+            new() {
+                Name = "transfer_item",
+                Description = "Move an item from one character to another. Use for giving items, buying, selling, or paying for services. Gold uses itemId 'Gold_001'.",
+                Parameters = new List<LlmToolParameter> {
+                    new() { Name = "itemId", Type = "string", Description = "Morrowind item ID, e.g. 'Gold_001', 'iron_dagger', 'p_restore_health_c'" },
+                    new() { Name = "count", Type = "integer", Description = "Quantity (default 1)", Required = false },
+                    new() { Name = "fromCharacterId", Type = "string", Description = "Character ID giving the item. Omit if the NPC is giving it.", Required = false },
+                    new() { Name = "toCharacterId", Type = "string", Description = "Character ID receiving the item. Omit if the player is receiving it.", Required = false },
+                    new() { Name = "isServicePayment", Type = "boolean", Description = "True if this is payment for a service (training, healing, etc.)", Required = false },
                 }
             },
             new() {
