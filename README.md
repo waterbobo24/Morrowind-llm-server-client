@@ -38,27 +38,48 @@ All generated content has been reviewed, tested, and curated by a human maintain
 
 ---
 
-## 🚀 Installation
+
+## 🚀 Installation & Running
+
+You need **two** .NET processes running simultaneously: the **Server** (handles LLM APIs, memory, and voice) and the **Client Console** (bridges OpenMW ↔ Server).
+
+### 1. Clone and enter the repo
 
 ```bash
 git clone https://github.com/waterbobo24/Morrowind-llm-server-client.git
 cd Morrowind-llm-server-client
-# Restore and run (adjust path to .csproj as needed)
+
+2. Configure credentials
+
+cp example/server-config.example.yaml .tmp/server-config.yaml
+# Edit .tmp/server-config.yaml with your API keys
+
+3. Terminal 1 — Start the Server
+
 dotnet run --project src/ZdoRpgAi.Server
 
-⚙️ Configuration
+4. Terminal 2 — Start the Client
 
-    Copy the example config template:
+dotnet run --project src/ZdoRpgAi.Client.Console -- --config .tmp/client-config.yaml
 
-    cp example/server-config.example.yaml .tmp/server-config.yaml
+    Tip — Background the client in one terminal:
 
-    Edit .tmp/server-config.yaml:
-        Add your LLM API key (openai_api_key, anthropic_api_key, or google_gemini_api_key)
-        Optional: add ElevenLabs API key for cloud voice
-        Optional: enable Pocket TTS for local voice synthesis
-        Optional: add Deepgram API key for speech-to-text
+    nohup dotnet run --project src/ZdoRpgAi.Client.Console -- --config .tmp/client-config.yaml > /tmp/client.log 2>&1 &
+    sleep 2
 
-    Security: .tmp/ is gitignored. Your API keys will never be committed.
+
+---
+
+
+
+```markdown
+## ⚙️ Quick Start
+
+1. Start the **Server** (`dotnet run --project src/ZdoRpgAi.Server` in the server repo).
+2. Start the **Client** (`dotnet run --project src/ZdoRpgAi.Client.Console -- --config .tmp/client-config.yaml`).
+   - Or background it: `nohup dotnet run ... > /tmp/client.log 2>&1 &`
+3. Launch **OpenMW** with this mod enabled.
+4. Approach any NPC and talk (push-to-talk or text input via Zenity).
 
 💻 Platform Notes
 Platform	Status
