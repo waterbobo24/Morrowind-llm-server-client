@@ -53,7 +53,7 @@ All generated content has been reviewed, tested, and curated by a human maintain
 | **Windows** | ⚠️ Untested | Server (.NET) is cross-platform. Mod text input requires Zenity or script modifications. Voice-only mode should work. |
 | **macOS** | ⚠️ Untested | Server (.NET) is cross-platform. Mod text input uses Zenity (not native); `osascript` or voice-only may be needed. |
 
-> **Text Input:** This mod uses **Zenity** to display text entry dialogs *outside* the game window. OpenMW Lua does not currently provide an in-game text box API. If Zenity is unavailable, text input falls back to voice-only mode (if Deepgram is configured) or fails gracefully.
+> **Text Input:** This mod uses **Zenity** to display text entry dialogs *outside* the game window. An in-game text box is not currently implemented. If Zenity is unavailable, text input falls back to voice-only mode (if Deepgram is configured) or fails gracefully.
 
 ---
 
