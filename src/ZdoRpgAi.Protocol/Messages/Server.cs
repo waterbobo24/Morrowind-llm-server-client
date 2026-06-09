@@ -6,6 +6,7 @@ public enum ServerToModMessageType {
     Say,
     SayMp3File,
     SpawnOnGroundInFrontOfCharacter,
+    EquipItem,
     PlaySound3dOnCharacter,
     NpcStartFollowCharacter,
     NpcStopFollowCharacter,

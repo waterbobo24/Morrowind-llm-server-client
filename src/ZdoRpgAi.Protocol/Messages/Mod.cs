@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 namespace ZdoRpgAi.Protocol.Messages;
 
 // Mod → Server
@@ -14,34 +15,35 @@ public enum ModToServerMessageType {
 }
 
 public record PlayerAddedPayload(
-    string PlayerId,
-    string Name = "",
-    string Race = "",
-    string Sex = "",
-    string ClassName = "",
-    int Level = 0,
-    int HealthCurrent = 0,
-    int HealthMax = 0,
-    int MagickaCurrent = 0,
-    int MagickaMax = 0,
-    int FatigueCurrent = 0,
-    int FatigueMax = 0,
-    string? CellName = null);
+    [property: JsonPropertyName("playerId")] string PlayerId,
+    [property: JsonPropertyName("name")] string Name = "",
+    [property: JsonPropertyName("race")] string Race = "",
+    [property: JsonPropertyName("sex")] string Sex = "",
+    [property: JsonPropertyName("className")] string ClassName = "",
+    [property: JsonPropertyName("level")] int Level = 0,
+    [property: JsonPropertyName("healthCurrent")] float HealthCurrent = 0,
+    [property: JsonPropertyName("healthMax")] float HealthMax = 0,
+    [property: JsonPropertyName("magickaCurrent")] float MagickaCurrent = 0,
+    [property: JsonPropertyName("magickaMax")] float MagickaMax = 0,
+    [property: JsonPropertyName("fatigueCurrent")] float FatigueCurrent = 0,
+    [property: JsonPropertyName("fatigueMax")] float FatigueMax = 0,
+    [property: JsonPropertyName("cellName")] string? CellName = null);
 
 public record PlayerStateChangedPayload(
-    string PlayerId,
-    int HealthCurrent,
-    int HealthMax,
-    int MagickaCurrent,
-    int MagickaMax,
-    int FatigueCurrent,
-    int FatigueMax,
-    string? CellName,
-    bool IsDead);
+    [property: JsonPropertyName("playerId")] string PlayerId,
+    [property: JsonPropertyName("healthCurrent")] float HealthCurrent,
+    [property: JsonPropertyName("healthMax")] float HealthMax,
+    [property: JsonPropertyName("magickaCurrent")] float MagickaCurrent,
+    [property: JsonPropertyName("magickaMax")] float MagickaMax,
+    [property: JsonPropertyName("fatigueCurrent")] float FatigueCurrent,
+    [property: JsonPropertyName("fatigueMax")] float FatigueMax,
+    [property: JsonPropertyName("cellName")] string? CellName,
+    [property: JsonPropertyName("isDead")] bool IsDead);
 
 public record TargetChangedPayload(string PlayerId, string? NpcId);
 public record CellChangePayload(string PlayerId, string CellName);
-public record GameSaveLoadPayload();
+public record GameSaveLoadPayload(
+    [property: JsonPropertyName("saveId")] string? SaveId = null);
 public record NearbyCharacterInfo(string CharacterId, float DistanceMeters);
 public record GameTimeUpdatePayload(string GameTime);
 

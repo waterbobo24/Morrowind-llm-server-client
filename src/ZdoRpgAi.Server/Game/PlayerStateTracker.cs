@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using ZdoRpgAi.Core;
+using ZdoRpgAi.Repository;
 using ZdoRpgAi.Protocol.Channel;
 using ZdoRpgAi.Protocol.Messages;
 using ZdoRpgAi.Protocol.Rpc;
@@ -9,15 +10,21 @@ namespace ZdoRpgAi.Server.Game;
 public class PlayerStateTracker {
     private static readonly ILog Log = Logger.Get<PlayerStateTracker>();
     private readonly IRpcChannel _rpc;
+    private readonly ISaveGameRepository _saveGameRepo;
     private readonly ConcurrentDictionary<string, PlayerState> _players = new();
+    private readonly ConcurrentDictionary<string, List<EquippedItem>> _npcEquipment = new();
 
-    public PlayerStateTracker(IRpcChannel rpc) {
+    public PlayerStateTracker(IRpcChannel rpc, ISaveGameRepository saveGameRepo) {
         _rpc = rpc;
+        _saveGameRepo = saveGameRepo;
         rpc.MessageReceived += OnMessageReceived;
     }
 
     private void OnMessageReceived(Message msg) {
         switch (msg.Type) {
+            case nameof(ModToServerMessageType.GameSaveLoad):
+                HandleGameSaveLoad(msg);
+                break;
             case nameof(ModToServerMessageType.PlayerAdded):
                 HandlePlayerAdded(msg);
                 break;
@@ -26,6 +33,12 @@ public class PlayerStateTracker {
                 break;
             case nameof(ModToServerMessageType.CellChange):
                 HandleCellChange(msg);
+                break;
+            case "NpcEquipment":
+                HandleNpcEquipment(msg);
+                break;
+            case "PlayerEquipment":
+                HandlePlayerEquipment(msg);
                 break;
         }
     }
@@ -81,6 +94,34 @@ public class PlayerStateTracker {
         }
     }
 
+    private void HandleGameSaveLoad(Message msg) {
+        var payload = msg.Json?.DeserializeSafe(PayloadJsonContext.Default.GameSaveLoadPayload);
+        if (payload?.SaveId is not null) {
+            _saveGameRepo.SetSaveContext(payload.SaveId);
+            _players.Clear();
+            Log.Info("Switched to save context: {SaveId}, cleared {Count} cached player(s)", payload.SaveId, _players.Count);
+        }
+    }
+
+    private void HandleNpcEquipment(Message msg) {
+        var payload = msg.Json?.DeserializeSafe(PayloadJsonContext.Default.EquipmentMessage);
+        if (payload?.Items != null) {
+            _npcEquipment[payload.Id] = payload.Items;
+            Log.Info("NPC {NpcId} equipment updated: {Count} items", payload.Id, payload.Items.Count);
+        }
+    }
+
+    private void HandlePlayerEquipment(Message msg) {
+        var payload = msg.Json?.DeserializeSafe(PayloadJsonContext.Default.EquipmentMessage);
+        if (payload?.Items != null && _players.TryGetValue(payload.Id, out var existing)) {
+            _players[payload.Id] = existing with { Equipment = payload.Items };
+            Log.Info("Player {PlayerId} equipment updated: {Count} items", payload.Id, payload.Items.Count);
+        }
+    }
+
+    public List<EquippedItem> GetNpcEquipment(string npcId) =>
+        _npcEquipment.GetValueOrDefault(npcId) ?? new List<EquippedItem>();
+
     public PlayerState? GetPlayerState(string playerId) => _players.GetValueOrDefault(playerId);
 
     public List<string> ListPlayerIds() => _players.Keys.ToList();
@@ -93,11 +134,12 @@ public record PlayerState(
     string Sex,
     string ClassName,
     int Level,
-    int HealthCurrent,
-    int HealthMax,
-    int MagickaCurrent,
-    int MagickaMax,
-    int FatigueCurrent,
-    int FatigueMax,
+    float HealthCurrent,
+    float HealthMax,
+    float MagickaCurrent,
+    float MagickaMax,
+    float FatigueCurrent,
+    float FatigueMax,
     string? CellName,
-    bool IsDead);
+    bool IsDead,
+    List<EquippedItem>? Equipment = null);

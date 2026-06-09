@@ -46,7 +46,7 @@ public class GameRunner {
         _npcRepo = new NpcRepository(mainRepo, saveGameRepo, rpc);
         var speedAdjuster = new Mp3SpeedAdjuster(mp3SpeedConfig);
         var npcSpeechGenerator = new NpcSpeechGenerator(tts, speedAdjuster);
-        var playerState = new PlayerStateTracker(rpc);
+        var playerState = new PlayerStateTracker(rpc, saveGameRepo);
         _director = new Director.Director(story, directorHelper, npcSpeechGenerator, rpc, mainLlm, simpleLlm, _npcRepo, playerState, playerPersonaConfig);
 
         _playerHandler.PlayerSpoke += _storyComposer.OnPlayerSpeak;

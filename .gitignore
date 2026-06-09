@@ -9,3 +9,27 @@ config.json
 BuildInfo.g.cs
 .tmp/zdo-rpg-ai/
 zdo-rpg-ai/
+
+# Build outputs
+*.exe
+*.dll
+*.so
+*.dylib
+publish/
+bin/
+obj/
+
+# Backups / temp
+.backups/
+*.bak
+tmp/
+.tmp/
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+
+# Runtime files
+q

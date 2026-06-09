@@ -63,8 +63,9 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
 
             // Execute any game actions the LLM requested
             if (actions != null && actions.Count > 0) {
+                var lastPlayerText = events.OfType<StoryEvent.PlayerSpeak>().LastOrDefault()?.Text;
                 foreach (var action in actions) {
-                    await ExecuteActionAsync(npcId, action, playerIds.FirstOrDefault());
+                    await ExecuteActionAsync(npcId, action, playerIds.FirstOrDefault(), lastPlayerText, history);
                 }
             }
 
@@ -87,7 +88,7 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
         }
     }
 
-    private async Task ExecuteActionAsync(string npcId, LlmToolCall toolCall, string? defaultTargetId) {
+    private async Task ExecuteActionAsync(string npcId, LlmToolCall toolCall, string? defaultTargetId, string? lastPlayerText = null, IReadOnlyList<StoryEvent>? history = null) {
         try {
             Log.Info("Executing action {Action} for NPC {NpcId}", toolCall.Name, npcId);
 
@@ -158,9 +159,79 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
                 case "transfer_item": {
                     var itemId = GetArg<string>(args, "itemId");
                     var count = GetArg<int?>(args, "count") ?? 1;
+
+                    // OVERRIDE: if player explicitly states a number, use it instead of LLM's default
+                    if (count == 1 && itemId == "Gold_001") {
+                        var playerText = lastPlayerText;
+                        if (!string.IsNullOrEmpty(playerText)) {
+                            var wordMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) {
+                                ["fifty"] = 50, ["twenty"] = 20, ["thirty"] = 30,
+                                ["forty"] = 40, ["sixty"] = 60, ["seventy"] = 70,
+                                ["eighty"] = 80, ["ninety"] = 90, ["hundred"] = 100,
+                                ["one"] = 1, ["two"] = 2, ["three"] = 3,
+                                ["four"] = 4, ["five"] = 5, ["ten"] = 10
+                            };
+                            
+                            // Try compound "two hundred", "three hundred", etc.
+                            var compoundMatch = System.Text.RegularExpressions.Regex.Match(playerText, @"(\w+)\s+hundred", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                            if (compoundMatch.Success && wordMap.TryGetValue(compoundMatch.Groups[1].Value.ToLowerInvariant(), out var multiplier) && multiplier > 0) {
+                                count = multiplier * 100;
+                            } else {
+                                foreach (var kv in wordMap) {
+                                    if (playerText.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0) {
+                                        count = kv.Value;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            if (count == 1) {
+                                var m = System.Text.RegularExpressions.Regex.Match(playerText, @"\b(\d+)\b");
+                                if (m.Success && int.TryParse(m.Groups[1].Value, out var n)) count = n;
+                            }
+                            if (count != 1) Log.Info("Overrode gold count to {Count} from player message", count);
+                        }
+                        
+                        // FALLBACK: search conversation history for last gold amount mentioned
+                        if (count == 1 && history != null) {
+                            var recentTexts = history
+                                .Where(h => h is StoryEvent.PlayerSpeak || h is StoryEvent.NpcSpeak)
+                                .Select(h => h is StoryEvent.PlayerSpeak ps ? ps.Text : h is StoryEvent.NpcSpeak ns ? ns.Text : null)
+                                .Where(t => !string.IsNullOrEmpty(t))
+                                .Reverse()
+                                .Take(10);
+                            
+                            foreach (var text in recentTexts) {
+                                // Try numeric first
+                                var numMatch = System.Text.RegularExpressions.Regex.Match(text, @"\b(\d+)\b");
+                                if (numMatch.Success && int.TryParse(numMatch.Groups[1].Value, out var histAmount) && histAmount > 1) {
+                                    count = histAmount;
+                                    Log.Info("Overrode gold count to {Count} from conversation history", count);
+                                    break;
+                                }
+                                // Try "X hundred" in history
+                                var compoundHist = System.Text.RegularExpressions.Regex.Match(text, @"(\w+)\s+hundred", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                                if (compoundHist.Success) {
+                                    var wordMap2 = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) {
+                                        ["one"] = 1, ["two"] = 2, ["three"] = 3, ["four"] = 4,
+                                        ["five"] = 5, ["six"] = 6, ["seven"] = 7, ["eight"] = 8,
+                                        ["nine"] = 9, ["ten"] = 10
+                                    };
+                                    if (wordMap2.TryGetValue(compoundHist.Groups[1].Value.ToLowerInvariant(), out var mult) && mult > 0) {
+                                        count = mult * 100;
+                                        Log.Info("Overrode gold count to {Count} from conversation history (compound)", count);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     var fromId = GetArg<string>(args, "fromCharacterId") ?? npcId;
                     var toId = GetArg<string>(args, "toCharacterId") ?? defaultTargetId;
                     var isService = GetArg<bool?>(args, "isServicePayment") ?? false;
+                    Log.Info("TRANSFER ARGS: itemId={ItemId} count={Count} from={FromId} to={ToId} npcContext={NpcId} defaultTarget={TargetId}",
+                        itemId, count, fromId, toId, npcId, defaultTargetId);
                     if (itemId != null && fromId != null && toId != null) {
                         _ = await _rpc.CallAsync(
                             nameof(ServerToModMessageType.TransferItem),
@@ -178,6 +249,18 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
                             JsonExtensions.SerializeToObject(
                                 new ShowMessageBoxPayload(message),
                                 PayloadJsonContext.Default.ShowMessageBoxPayload));
+                    }
+                    break;
+                }
+                case "equip_item": {
+                    var eqItemId = GetArg<string>(args, "itemId");
+                    var eqSlot = GetArg<string>(args, "slot");
+                    if (eqItemId != null && eqSlot != null) {
+                        _ = await _rpc.CallAsync(
+                            nameof(ServerToModMessageType.EquipItem),
+                            JsonExtensions.SerializeToObject(
+                                new EquipItemPayload(npcId, eqItemId, eqSlot),
+                                PayloadJsonContext.Default.EquipItemPayload));
                     }
                     break;
                 }
@@ -349,6 +432,21 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
         return $"--- INFORMATION ABOUT THE PERSON YOU ARE SPEAKING TO ---\n{inner}";
     }
 
+    private string? BuildNpcEquipmentBlock(string npcId) {
+        var items = _playerState.GetNpcEquipment(npcId);
+        if (items.Count == 0) return null;
+        var lines = items.Select(i => $"- {i.ItemId} ({i.Slot})");
+        return "--- YOUR CURRENT EQUIPMENT ---\n" + string.Join("\n", lines);
+    }
+
+    private string? BuildPlayerEquipmentBlock(string? playerId) {
+        if (playerId == null) return null;
+        var state = _playerState.GetPlayerState(playerId);
+        if (state?.Equipment == null || state.Equipment.Count == 0) return null;
+        var lines = state.Equipment.Select(i => $"- {i.ItemId} ({i.Slot})");
+        return "--- WHAT THE OUTLANDER IS WEARING ---\n" + string.Join("\n", lines);
+    }
+
     private static string GetPersonality(NpcInfo npc) {
         var custom = s_npcPersonalities.GetValueOrDefault(npc.Id);
         if (custom != null) return custom;
@@ -370,11 +468,18 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
 
         var playerPersonaBlock = BuildPlayerPersonaBlock(playerId);
 
+        var npcEquipmentBlock = BuildNpcEquipmentBlock(npc.Id);
+
+        var playerEquipmentBlock = BuildPlayerEquipmentBlock(playerId);
+
         var currentGameTime = history.LastOrDefault()?.GameTime;
         var timeClause = !string.IsNullOrWhiteSpace(currentGameTime) ? $" The current game time is {currentGameTime}." : "";
         var systemPrompt = $"""
             {GetPersonality(npc)}{timeClause}
+            Your internal character ID is "{npc.Id}". When using tools that require an NPC ID, use this exact string.
             {playerPersonaBlock ?? ""}
+            {npcEquipmentBlock ?? ""}
+            {playerEquipmentBlock ?? ""}
             Stay in character. Speak briefly and naturally. Do not mention that you are an AI. Always respond in the English language.
 
             You will be told what other characters say and do. Reply with your own speech AND use tools to perform game actions when appropriate.
@@ -386,6 +491,7 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
             4. Call tools TOGETHER with your speech in the same response. Do not wait for the next turn.
             5. Reply ONLY with your own speech — no narration, no prefixes, no stage directions.
             6. For item IDs, use real Morrowind item IDs like "iron_dagger", "p_heal", "ingred_scales_01", etc.
+            7. When the player says they are giving you gold or an item, you MUST use transfer_item with fromCharacterId="player". Accept it immediately with the tool — do not refuse, demand proof, or narrate taking it.
             """;
 
         var messages = new List<LlmMessage>();
@@ -425,6 +531,7 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
         var response = await _mainLlm.ChatAsync(request);
         var text = response.Text?.Trim();
         var actions = response.ToolCalls ?? [];
+        Log.Info("LLM returned {TextLength} chars and {ToolCount} tool calls: {ToolNames}", response.Text?.Length ?? 0, actions.Count, actions.Count > 0 ? string.Join(", ", actions.Select(a => a.Name)) : "none");
 
         Log.Trace("Main LLM response: {TextLength} chars, {ActionCount} actions", text?.Length ?? 0, actions.Count);
         return (text, actions);
@@ -437,7 +544,7 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
                 Description = "Spawn an item on the ground in front of the NPC. Use this to give items to the player.",
                 Parameters = new List<LlmToolParameter> {
                     new() { Name = "itemId", Type = "string", Description = "Morrowind item ID, e.g. 'iron_dagger', 'p_heal', 'ingred_scales_01'" },
-                    new() { Name = "count", Type = "integer", Description = "Quantity (default 1)", Required = false },
+                    new() { Name = "count", Type = "integer", Description = "Exact quantity. Extract if player says 50, fifty, five, etc.", Required = true },
                 }
             },
             new() {
@@ -473,12 +580,12 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
             },
             new() {
                 Name = "transfer_item",
-                Description = "Move an item from one character to another. Use for giving items, buying, selling, or paying for services. Gold uses itemId 'Gold_001'.",
+                Description = "Transfer an item or gold between characters. Use for giving, buying, selling, or payments. Gold = itemId 'Gold_001'. IMPORTANT: if player says a number (fifty/50/5), extract that exact number into the count parameter. toCharacterId must be the exact lowercase internal ID like 'seryn_othralen' not the display name.",
                 Parameters = new List<LlmToolParameter> {
                     new() { Name = "itemId", Type = "string", Description = "Morrowind item ID, e.g. 'Gold_001', 'iron_dagger', 'p_restore_health_c'" },
-                    new() { Name = "count", Type = "integer", Description = "Quantity (default 1)", Required = false },
-                    new() { Name = "fromCharacterId", Type = "string", Description = "Character ID giving the item. Omit if the NPC is giving it.", Required = false },
-                    new() { Name = "toCharacterId", Type = "string", Description = "Character ID receiving the item. Omit if the player is receiving it.", Required = false },
+                    new() { Name = "count", Type = "integer", Description = "Exact quantity. Extract if player says 50, fifty, five, etc.", Required = true },
+                    new() { Name = "fromCharacterId", Type = "string", Description = "Character ID giving the item. Use 'player' for the player.", Required = true },
+                    new() { Name = "toCharacterId", Type = "string", Description = "Character ID receiving the item. Use 'player' for the player.", Required = true },
                     new() { Name = "isServicePayment", Type = "boolean", Description = "True if this is payment for a service (training, healing, etc.)", Required = false },
                 }
             },
@@ -487,6 +594,14 @@ public class SimpleReactiveStrategy : IDirectorStrategy {
                 Description = "Show a message box to the player.",
                 Parameters = new List<LlmToolParameter> {
                     new() { Name = "message", Type = "string", Description = "Message text to display" },
+                }
+            },
+            new() {
+                Name = "equip_item",
+                Description = "Equip an item. The item will be created in your inventory if you don't have it.",
+                Parameters = new List<LlmToolParameter> {
+                    new() { Name = "itemId", Type = "string", Description = "Morrowind record ID, e.g. 'iron_dagger', 'expensive_shirt_01'" },
+                    new() { Name = "slot", Type = "string", Description = "Slot name: CarriedRight, CarriedLeft, Ammunition, Helmet, Cuirass, LeftPauldron, RightPauldron, LeftGauntlet, RightGauntlet, Greaves, Boots, Shirt, Pants, Skirt, Robe, Amulet, Belt, LeftRing, RightRing", Required = true },
                 }
             },
         };
