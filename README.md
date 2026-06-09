@@ -27,8 +27,7 @@ All generated content has been reviewed, tested, and curated by a human maintain
 ### Core (Original)
 - Natural language conversations with any NPC via LLM (OpenAI, Anthropic, Google Gemini)
 - Persistent NPC memory across sessions (powered by ChromaDB vector database)
-- Dynamic faction, race, and class-aware dialogue generation
-- Voice output via **ElevenLabs** or **Pocket TTS** (local/offline) (optional)
+- Voice output via **ElevenLabs**
 - Speech-to-text via **Deepgram** (optional)
 
 ### Enhancements (This Fork — Experimental)
@@ -42,6 +41,7 @@ All generated content has been reviewed, tested, and curated by a human maintain
 | **Item Transactions** | Trade, buy, sell, and gift items through natural dialogue (`transfer_item` action) |
 | **Periodic NPC Refresh** | Background context updates prevent NPCs from going stale |
 | **Save Stability** | Fixes for context persistence across save/load cycles |
+| **Local TTS Support** | Speech can be generated offline via Pocket TTS |
 
 ---
 
