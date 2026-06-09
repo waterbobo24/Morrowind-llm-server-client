@@ -1,5 +1,4 @@
-
-content = """# Morrowind LLM Server Client
+Morrowind LLM Server Client
 
 **.NET backend for the Morrowind LLM Mod.**  
 Proxies OpenMW game events to LLM APIs and handles voice synthesis/speech recognition.
